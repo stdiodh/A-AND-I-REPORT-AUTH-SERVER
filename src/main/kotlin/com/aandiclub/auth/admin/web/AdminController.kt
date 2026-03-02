@@ -59,6 +59,7 @@ class AdminController(
 			targetUserId = request.userId,
 			role = request.role,
 			userTrack = request.userTrack,
+			cohort = request.cohort,
 			actorUserId = actor.userId,
 		).map { ApiResponse.success(it) }
 

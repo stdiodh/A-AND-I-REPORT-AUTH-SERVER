@@ -16,7 +16,7 @@ interface AdminService {
 	fun getUsers(): Mono<List<AdminUserSummary>>
 	fun createUser(request: CreateAdminUserRequest): Mono<CreateAdminUserResponse>
 	fun resetPassword(userId: UUID): Mono<ResetPasswordResponse>
-	fun updateUserRole(targetUserId: UUID, role: UserRole, userTrack: UserTrack?, actorUserId: UUID): Mono<UpdateUserRoleResponse>
+	fun updateUserRole(targetUserId: UUID, role: UserRole, userTrack: UserTrack?, cohort: Int?, actorUserId: UUID): Mono<UpdateUserRoleResponse>
 	fun deleteUser(targetUserId: UUID, actorUserId: UUID): Mono<Void>
 	fun sendInviteMail(request: InviteMailRequest): Mono<InviteMailResponse>
 }

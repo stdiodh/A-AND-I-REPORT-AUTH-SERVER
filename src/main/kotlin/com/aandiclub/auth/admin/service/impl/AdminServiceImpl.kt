@@ -60,7 +60,8 @@ class AdminServiceImpl(
 		).flatMap { tuple ->
 			val username = "user_${tuple.t1.toString().padStart(2, '0')}"
 			val cohortOrder = tuple.t2.toInt()
-			val userTrack = userPublicCodeService.resolveTrack(request.role, request.userTrack)
+			// New accounts always start with NO track; track changes happen only via admin update flow.
+			val userTrack = userPublicCodeService.resolveTrack(request.role, null)
 			val publicCode = userPublicCodeService.generate(
 				role = request.role,
 				userTrack = userTrack,
@@ -94,6 +95,7 @@ class AdminServiceImpl(
 		targetUserId: UUID,
 		role: UserRole,
 		userTrack: UserTrack?,
+		cohort: Int?,
 		actorUserId: UUID,
 	): Mono<UpdateUserRoleResponse> {
 		if (targetUserId == actorUserId) {
@@ -103,42 +105,57 @@ class AdminServiceImpl(
 		return userRepository.findById(targetUserId)
 			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
 			.flatMap { user ->
-				val resolvedTrack = userPublicCodeService.resolveTrack(
-					role = role,
-					requestedTrack = if (role == UserRole.USER) userTrack ?: user.userTrack else null,
-				)
-				val recalculatedPublicCode = userPublicCodeService.generate(
-					role = role,
-					userTrack = resolvedTrack,
-					cohort = user.cohort,
-					cohortOrder = user.cohortOrder,
-				)
-				userRepository.save(
-					user.copy(
+				val resolvedCohort = cohort ?: user.cohort
+				val cohortOrderMono = if (resolvedCohort == user.cohort) {
+					Mono.just(user.cohortOrder)
+				} else {
+					usernameSequenceService.nextCohortOrderSequence(resolvedCohort).map { it.toInt() }
+				}
+
+				cohortOrderMono.flatMap { resolvedCohortOrder ->
+					val resolvedTrack = userPublicCodeService.resolveTrack(
+						role = role,
+						requestedTrack = if (role == UserRole.USER) userTrack ?: user.userTrack else null,
+					)
+					val recalculatedPublicCode = userPublicCodeService.generate(
 						role = role,
 						userTrack = resolvedTrack,
-						publicCode = recalculatedPublicCode,
-					),
-				).map { saved ->
-					logger.warn(
-						"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={} old_track={} new_track={} public_code={}",
-						saved.id,
-						saved.username,
-						user.role,
-						saved.role,
-						user.userTrack,
-						saved.userTrack,
-						saved.publicCode,
+						cohort = resolvedCohort,
+						cohortOrder = resolvedCohortOrder,
 					)
-					UpdateUserRoleResponse(
-						id = requireNotNull(saved.id),
-						username = saved.username,
-						role = saved.role,
-						userTrack = saved.userTrack,
-						cohort = saved.cohort,
-						cohortOrder = saved.cohortOrder,
-						publicCode = saved.publicCode,
-					)
+					userRepository.save(
+						user.copy(
+							role = role,
+							userTrack = resolvedTrack,
+							cohort = resolvedCohort,
+							cohortOrder = resolvedCohortOrder,
+							publicCode = recalculatedPublicCode,
+						),
+					).map { saved ->
+						logger.warn(
+							"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={} old_track={} new_track={} old_cohort={} new_cohort={} old_cohort_order={} new_cohort_order={} public_code={}",
+							saved.id,
+							saved.username,
+							user.role,
+							saved.role,
+							user.userTrack,
+							saved.userTrack,
+							user.cohort,
+							saved.cohort,
+							user.cohortOrder,
+							saved.cohortOrder,
+							saved.publicCode,
+						)
+						UpdateUserRoleResponse(
+							id = requireNotNull(saved.id),
+							username = saved.username,
+							role = saved.role,
+							userTrack = saved.userTrack,
+							cohort = saved.cohort,
+							cohortOrder = saved.cohortOrder,
+							publicCode = saved.publicCode,
+						)
+					}
 				}
 			}
 	}

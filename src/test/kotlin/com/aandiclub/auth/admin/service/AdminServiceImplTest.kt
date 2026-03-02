@@ -68,10 +68,10 @@ class AdminServiceImplTest : FunSpec({
 			username = "user_01",
 			passwordHash = "hashed-password",
 			role = UserRole.USER,
-			userTrack = UserTrack.SP,
+			userTrack = UserTrack.NO,
 			cohort = 4,
 			cohortOrder = 1,
-			publicCode = "#SP401",
+			publicCode = "#NO401",
 			forcePasswordChange = true,
 		)
 		val savedEntitySlot = slot<UserEntity>()
@@ -84,17 +84,17 @@ class AdminServiceImplTest : FunSpec({
 
 		StepVerifier.create(
 			service.createUser(
-				CreateAdminUserRequest(cohort = 4, role = UserRole.USER, userTrack = UserTrack.SP, provisionType = ProvisionType.PASSWORD),
+				CreateAdminUserRequest(cohort = 4, role = UserRole.USER, provisionType = ProvisionType.PASSWORD),
 			),
 		)
 			.assertNext { response ->
 				response.username shouldBe "user_01"
 				response.temporaryPassword shouldBe "A".repeat(32)
 				response.role shouldBe UserRole.USER
-				response.userTrack shouldBe UserTrack.SP
+				response.userTrack shouldBe UserTrack.NO
 				response.cohort shouldBe 4
 				response.cohortOrder shouldBe 1
-				response.publicCode shouldBe "#SP401"
+				response.publicCode shouldBe "#NO401"
 				response.provisionType shouldBe ProvisionType.PASSWORD
 			}
 			.verifyComplete()
@@ -137,13 +137,14 @@ class AdminServiceImplTest : FunSpec({
 
 		StepVerifier.create(
 			service.createUser(
-				CreateAdminUserRequest(cohort = 4, role = UserRole.USER, provisionType = ProvisionType.INVITE),
+				CreateAdminUserRequest(cohort = 4),
 			),
 		).assertNext { response ->
 			response.username shouldBe "user_02"
 			response.provisionType shouldBe ProvisionType.INVITE
 			response.inviteLink shouldBe "https://your-domain.com/activate?token=invite-token"
 			response.temporaryPassword shouldBe null
+			response.publicCode shouldBe "#NO402"
 		}.verifyComplete()
 
 		savedUserSlot.captured.isActive shouldBe false
@@ -475,7 +476,7 @@ class AdminServiceImplTest : FunSpec({
 			originalUser.copy(role = UserRole.ORGANIZER, userTrack = UserTrack.NO, publicCode = "#OR401"),
 		)
 
-		StepVerifier.create(service.updateUserRole(targetId, UserRole.ORGANIZER, null, actorId))
+		StepVerifier.create(service.updateUserRole(targetId, UserRole.ORGANIZER, null, null, actorId))
 			.assertNext { response ->
 				response.id shouldBe targetId
 				response.username shouldBe "member_01"
@@ -507,7 +508,7 @@ class AdminServiceImplTest : FunSpec({
 			originalUser.copy(userTrack = UserTrack.FL, publicCode = "#FL403"),
 		)
 
-		StepVerifier.create(service.updateUserRole(targetId, UserRole.USER, UserTrack.FL, actorId))
+		StepVerifier.create(service.updateUserRole(targetId, UserRole.USER, UserTrack.FL, null, actorId))
 			.assertNext { response ->
 				response.role shouldBe UserRole.USER
 				response.userTrack shouldBe UserTrack.FL
@@ -516,9 +517,43 @@ class AdminServiceImplTest : FunSpec({
 			.verifyComplete()
 	}
 
+	test("updateUserRole should update cohort and regenerate cohortOrder/publicCode") {
+		val actorId = UUID.randomUUID()
+		val targetId = UUID.randomUUID()
+		val originalUser = UserEntity(
+			id = targetId,
+			username = "member_03",
+			passwordHash = "h1",
+			role = UserRole.USER,
+			userTrack = UserTrack.NO,
+			cohort = 4,
+			cohortOrder = 3,
+			publicCode = "#NO403",
+		)
+		val savedSlot = slot<UserEntity>()
+
+		every { userRepository.findById(targetId) } returns Mono.just(originalUser)
+		every { usernameSequenceService.nextCohortOrderSequence(5) } returns Mono.just(1)
+		every { userRepository.save(capture(savedSlot)) } answers { Mono.just(firstArg()) }
+
+		StepVerifier.create(service.updateUserRole(targetId, UserRole.USER, UserTrack.FL, 5, actorId))
+			.assertNext { response ->
+				response.role shouldBe UserRole.USER
+				response.userTrack shouldBe UserTrack.FL
+				response.cohort shouldBe 5
+				response.cohortOrder shouldBe 1
+				response.publicCode shouldBe "#FL501"
+			}
+			.verifyComplete()
+
+		savedSlot.captured.cohort shouldBe 5
+		savedSlot.captured.cohortOrder shouldBe 1
+		savedSlot.captured.publicCode shouldBe "#FL501"
+	}
+
 	test("updateUserRole should reject self role change") {
 		val adminId = UUID.randomUUID()
-		StepVerifier.create(service.updateUserRole(adminId, UserRole.USER, null, adminId))
+		StepVerifier.create(service.updateUserRole(adminId, UserRole.USER, null, null, adminId))
 			.expectErrorSatisfies { ex ->
 				(ex as AppException).errorCode shouldBe ErrorCode.FORBIDDEN
 			}
