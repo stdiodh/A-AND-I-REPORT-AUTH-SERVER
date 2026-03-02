@@ -57,6 +57,8 @@ app:
   invite:
     activation-base-url: ${APP_INVITE_ACTIVATION_BASE_URL:https://aandiclub.com/activate}
     expiration-hours: ${APP_INVITE_EXPIRATION_HOURS:72}
+  schema-guard:
+    enabled: ${APP_SCHEMA_GUARD_ENABLED:true}
   invite-mail:
     subject: ${APP_INVITE_MAIL_SUBJECT:A&I 개발동아리 신규 동아리원 초대 안내}
     from: ${APP_INVITE_MAIL_FROM:}

@@ -10,6 +10,7 @@ services:
     environment:
       DB_R2DBC_URL: r2dbc:postgresql://postgres:5432/auth
       DB_JDBC_URL: jdbc:postgresql://postgres:5432/auth
+      DB_MIGRATION_ENABLED: "true"
       DB_USERNAME: auth
       DB_PASSWORD: auth
       REDIS_HOST: redis

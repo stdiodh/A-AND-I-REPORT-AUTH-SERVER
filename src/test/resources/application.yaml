@@ -12,5 +12,7 @@ security:
     clock-skew-seconds: 30
 
 app:
+  schema-guard:
+    enabled: false
   cors:
     allowed-origins: http://localhost:8080,http://127.0.0.1:8080,https://auth.aandiclub.com,https://api.aandiclub.com

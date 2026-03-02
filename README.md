@@ -12,6 +12,8 @@ cp .env.example .env
 - `JWT_SECRET` == `AUTH_JWT_SECRET`
 - `JWT_ISSUER` == `AUTH_ISSUER_URI`
 - `JWT_AUDIENCE` == `AUTH_AUDIENCE`
+- `DB_MIGRATION_ENABLED=true`
+- `DB_JDBC_URL` 과 `DB_R2DBC_URL` 은 반드시 같은 DB를 가리켜야 함
 
 ```bash
 docker compose up --build
