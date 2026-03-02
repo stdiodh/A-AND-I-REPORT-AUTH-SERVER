@@ -24,4 +24,19 @@ class RedisUsernameSequenceServiceTest : FunSpec({
 			}
 			.verifyComplete()
 	}
+
+	test("nextCohortOrderSequence should use cohort key") {
+		val redisTemplate = mockk<ReactiveStringRedisTemplate>()
+		val valueOperations = mockk<ReactiveValueOperations<String, String>>()
+		every { redisTemplate.opsForValue() } returns valueOperations
+		every { valueOperations.increment("user_code_seq:cohort:4") } returns Mono.just(11)
+
+		val service = RedisUsernameSequenceService(redisTemplate)
+
+		StepVerifier.create(service.nextCohortOrderSequence(4))
+			.assertNext { next ->
+				next shouldBe 11
+			}
+			.verifyComplete()
+	}
 })

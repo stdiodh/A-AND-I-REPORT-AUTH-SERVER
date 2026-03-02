@@ -54,6 +54,7 @@ class UserServiceImplTest : FunSpec({
 	val service = UserServiceImpl(
 		userRepository = userRepository,
 		passwordService = passwordService,
+		userPublicCodeService = UserPublicCodeService(),
 		userProfileEventPublisher = userProfileEventPublisher,
 		profileImageProperties = ProfileImageProperties(
 			enabled = true,
@@ -90,6 +91,7 @@ class UserServiceImplTest : FunSpec({
 
 		StepVerifier.create(service.getMe(AuthenticatedUser(userId, "user_01", UserRole.USER)))
 			.assertNext { response ->
+				response.publicCode shouldBe "#NO001"
 				response.nickname shouldBe "홍길동"
 				response.profileImageUrl shouldBe "https://images.aandiclub.com/users/user_01.png"
 			}
@@ -289,6 +291,46 @@ class UserServiceImplTest : FunSpec({
 				ex::class shouldBe AppException::class
 				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
 				ex.message shouldBe "Unsupported profile image content type."
+			}
+			.verify()
+	}
+
+	test("lookupByPublicCode should return non-admin user") {
+		val userId = UUID.randomUUID()
+		every { userRepository.findByPublicCode("#NO001") } returns Mono.just(
+			UserEntity(
+				id = userId,
+				username = "lookup_user",
+				passwordHash = "hash",
+				role = UserRole.USER,
+				publicCode = "#NO001",
+				nickname = "닉네임",
+			),
+		)
+
+		StepVerifier.create(service.lookupByPublicCode("#NO001"))
+			.assertNext { response ->
+				response.id shouldBe userId
+				response.publicCode shouldBe "#NO001"
+				response.username shouldBe "lookup_user"
+			}
+			.verifyComplete()
+	}
+
+	test("lookupByPublicCode should reject admin user") {
+		every { userRepository.findByPublicCode("#AD001") } returns Mono.just(
+			UserEntity(
+				id = UUID.randomUUID(),
+				username = "admin_lookup",
+				passwordHash = "hash",
+				role = UserRole.ADMIN,
+				publicCode = "#AD001",
+			),
+		)
+
+		StepVerifier.create(service.lookupByPublicCode("#AD001"))
+			.expectErrorSatisfies { ex ->
+				(ex as AppException).errorCode shouldBe ErrorCode.NOT_FOUND
 			}
 			.verify()
 	}

@@ -36,24 +36,24 @@ class UserRepositoryTest : FunSpec() {
 		beforeSpec {
 			databaseClient.sql(
 				"""
-					CREATE TABLE IF NOT EXISTS "users" (
-						"id" UUID PRIMARY KEY,
-						"username" VARCHAR(64) NOT NULL UNIQUE,
-						"password_hash" VARCHAR(255) NOT NULL,
-						"role" VARCHAR(32) NOT NULL,
-						"force_password_change" BOOLEAN NOT NULL,
-						"is_active" BOOLEAN NOT NULL,
-						"last_login_at" TIMESTAMP NULL,
-						"nickname" VARCHAR(40) NULL,
-						"profile_image_url" VARCHAR(2048) NULL,
-						"profile_version" BIGINT NOT NULL DEFAULT 0,
-						"user_track" VARCHAR(16) NOT NULL DEFAULT 'NO',
-						"cohort" INTEGER NOT NULL DEFAULT 0,
-						"cohort_order" INTEGER NOT NULL DEFAULT 0,
-						"public_code" VARCHAR(16) NOT NULL,
-						"created_at" TIMESTAMP NOT NULL,
-						"updated_at" TIMESTAMP NOT NULL
-					)
+				CREATE TABLE IF NOT EXISTS "users" (
+					"id" UUID PRIMARY KEY,
+					"username" VARCHAR(64) NOT NULL UNIQUE,
+					"password_hash" VARCHAR(255) NOT NULL,
+					"role" VARCHAR(32) NOT NULL,
+					"user_track" VARCHAR(16) NOT NULL,
+					"cohort" INTEGER NOT NULL,
+					"cohort_order" INTEGER NOT NULL,
+					"public_code" VARCHAR(16) NOT NULL UNIQUE,
+					"force_password_change" BOOLEAN NOT NULL,
+					"is_active" BOOLEAN NOT NULL,
+					"last_login_at" TIMESTAMP NULL,
+					"nickname" VARCHAR(40) NULL,
+					"profile_image_url" VARCHAR(2048) NULL,
+					"profile_version" BIGINT NOT NULL DEFAULT 0,
+					"created_at" TIMESTAMP NOT NULL,
+					"updated_at" TIMESTAMP NOT NULL
+				)
 				""".trimIndent(),
 			).fetch().rowsUpdated().block()
 		}
@@ -81,6 +81,12 @@ class UserRepositoryTest : FunSpec() {
 				.assertNext { user ->
 					user.username shouldBe "user_01"
 					user.role shouldBe UserRole.USER
+				}
+				.verifyComplete()
+
+			StepVerifier.create(userRepository.findByPublicCode("#NO001"))
+				.assertNext { user ->
+					user.username shouldBe "user_01"
 				}
 				.verifyComplete()
 		}

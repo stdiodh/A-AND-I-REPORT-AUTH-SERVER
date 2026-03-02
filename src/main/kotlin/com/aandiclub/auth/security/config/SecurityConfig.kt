@@ -91,6 +91,7 @@ class SecurityConfig {
 					"/actuator/info",
 				).permitAll()
 				it.pathMatchers("/v1/me", "/v1/me/**").hasAnyRole("USER", "ORGANIZER", "ADMIN")
+				it.pathMatchers(HttpMethod.GET, "/v1/users/lookup").hasAnyRole("ORGANIZER", "ADMIN")
 				it.pathMatchers("/v1/admin/**").hasRole("ADMIN")
 				it.anyExchange().authenticated()
 			}

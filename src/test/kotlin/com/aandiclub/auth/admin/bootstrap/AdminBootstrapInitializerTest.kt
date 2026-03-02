@@ -4,6 +4,7 @@ import com.aandiclub.auth.admin.config.BootstrapAdminProperties
 import com.aandiclub.auth.security.service.PasswordService
 import com.aandiclub.auth.user.domain.UserEntity
 import com.aandiclub.auth.user.domain.UserRole
+import com.aandiclub.auth.user.service.UserPublicCodeService
 import com.aandiclub.auth.user.repository.UserRepository
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -33,7 +34,7 @@ class AdminBootstrapInitializerTest : FunSpec({
 			),
 		)
 
-		val initializer = AdminBootstrapInitializer(properties, userRepository, passwordService)
+		val initializer = AdminBootstrapInitializer(properties, userRepository, passwordService, UserPublicCodeService())
 		initializer.run(DefaultApplicationArguments())
 
 		entitySlot.captured.username shouldBe "admin"
@@ -45,7 +46,7 @@ class AdminBootstrapInitializerTest : FunSpec({
 		val properties = BootstrapAdminProperties(enabled = true, username = "admin", password = "")
 		val userRepository = mockk<UserRepository>()
 		val passwordService = mockk<PasswordService>()
-		val initializer = AdminBootstrapInitializer(properties, userRepository, passwordService)
+		val initializer = AdminBootstrapInitializer(properties, userRepository, passwordService, UserPublicCodeService())
 
 		initializer.run(DefaultApplicationArguments())
 

@@ -64,6 +64,7 @@ class AuthServiceImpl(
 								id = requireNotNull(user.id),
 								username = user.username,
 								role = user.role,
+								publicCode = user.publicCode,
 							),
 						)
 					}

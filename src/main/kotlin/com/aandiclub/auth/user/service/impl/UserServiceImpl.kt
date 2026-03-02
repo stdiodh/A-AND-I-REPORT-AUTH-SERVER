@@ -7,15 +7,18 @@ import com.aandiclub.auth.common.error.ErrorCode
 import com.aandiclub.auth.user.config.ProfileImageProperties
 import com.aandiclub.auth.user.config.ProfileProperties
 import com.aandiclub.auth.user.domain.UserEntity
+import com.aandiclub.auth.user.domain.UserRole
 import com.aandiclub.auth.user.event.UserProfileEventPublisher
 import com.aandiclub.auth.user.event.UserProfileUpdatedEvent
 import com.aandiclub.auth.user.repository.UserRepository
+import com.aandiclub.auth.user.service.UserPublicCodeService
 import com.aandiclub.auth.user.service.UserService
 import com.aandiclub.auth.user.web.dto.ChangePasswordRequest
 import com.aandiclub.auth.user.web.dto.ChangePasswordResponse
 import com.aandiclub.auth.user.web.dto.CreateProfileImageUploadUrlRequest
 import com.aandiclub.auth.user.web.dto.CreateProfileImageUploadUrlResponse
 import com.aandiclub.auth.user.web.dto.MeResponse
+import com.aandiclub.auth.user.web.dto.UserLookupResponse
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.http.codec.multipart.FilePart
@@ -36,6 +39,7 @@ import software.amazon.awssdk.core.sync.RequestBody
 class UserServiceImpl(
 	private val userRepository: UserRepository,
 	private val passwordService: PasswordService,
+	private val userPublicCodeService: UserPublicCodeService,
 	private val userProfileEventPublisher: UserProfileEventPublisher,
 	private val profileImageProperties: ProfileImageProperties,
 	private val s3Presigner: S3Presigner,
@@ -48,6 +52,23 @@ class UserServiceImpl(
 		userRepository.findById(user.userId)
 			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
 			.map { toMeResponse(it) }
+
+	override fun lookupByPublicCode(code: String): Mono<UserLookupResponse> {
+		val normalizedCode = userPublicCodeService.normalizeLookupCode(code)
+		return userRepository.findByPublicCode(normalizedCode)
+			.filter { it.role != UserRole.ADMIN }
+			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
+			.map { entity ->
+				UserLookupResponse(
+					id = requireNotNull(entity.id),
+					username = entity.username,
+					role = entity.role,
+					publicCode = entity.publicCode,
+					nickname = entity.nickname,
+					profileImageUrl = entity.profileImageUrl,
+				)
+			}
+	}
 
 	override fun updateProfile(
 		user: AuthenticatedUser,
@@ -175,6 +196,7 @@ class UserServiceImpl(
 			id = requireNotNull(entity.id),
 			username = entity.username,
 			role = entity.role,
+			publicCode = entity.publicCode,
 			nickname = entity.nickname,
 			profileImageUrl = entity.profileImageUrl,
 		)

@@ -36,6 +36,7 @@ data class LoginUser(
 	val id: UUID,
 	val username: String,
 	val role: UserRole,
+	val publicCode: String,
 )
 
 data class RefreshResponse(
