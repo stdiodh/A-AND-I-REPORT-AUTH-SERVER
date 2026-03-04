@@ -1,6 +1,7 @@
 package com.aandiclub.auth.security.config
 
 import com.aandiclub.auth.admin.config.BootstrapAdminProperties
+import com.aandiclub.auth.admin.config.InviteMailProperties
 import com.aandiclub.auth.admin.config.InviteProperties
 import com.aandiclub.auth.security.auth.JwtReactiveAuthenticationManager
 import com.aandiclub.auth.security.filter.BearerTokenAuthenticationConverter
@@ -32,6 +33,7 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource
 	BootstrapAdminProperties::class,
 	AppCorsProperties::class,
 	InviteProperties::class,
+	InviteMailProperties::class,
 	ProfileProperties::class,
 	ProfileImageProperties::class,
 	UserProfileEventProperties::class,

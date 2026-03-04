@@ -6,10 +6,14 @@ import com.aandiclub.auth.admin.invite.InviteTokenCacheService
 import com.aandiclub.auth.admin.password.CredentialGenerator
 import com.aandiclub.auth.admin.repository.UserInviteRepository
 import com.aandiclub.auth.admin.service.AdminService
+import com.aandiclub.auth.admin.service.InviteMailService
 import com.aandiclub.auth.admin.sequence.UsernameSequenceService
 import com.aandiclub.auth.admin.web.dto.AdminUserSummary
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserResponse
+import com.aandiclub.auth.admin.web.dto.InviteMailRequest
+import com.aandiclub.auth.admin.web.dto.InviteMailResponse
+import com.aandiclub.auth.admin.web.dto.InviteMailTarget
 import com.aandiclub.auth.admin.web.dto.ProvisionType
 import com.aandiclub.auth.admin.web.dto.ResetPasswordResponse
 import com.aandiclub.auth.admin.web.dto.UpdateUserRoleResponse
@@ -22,6 +26,7 @@ import com.aandiclub.auth.user.domain.UserRole
 import com.aandiclub.auth.user.repository.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.time.Clock
 import java.time.Duration
@@ -37,6 +42,7 @@ class AdminServiceImpl(
 	private val passwordService: PasswordService,
 	private val tokenHashService: TokenHashService,
 	private val inviteProperties: InviteProperties,
+	private val inviteMailService: InviteMailService,
 	private val clock: Clock = Clock.systemUTC(),
 ) : AdminService {
 	override fun getUsers(): Mono<List<AdminUserSummary>> =
@@ -114,8 +120,67 @@ class AdminServiceImpl(
 						},
 					)
 					.then()
-			}
+				}
 	}
+
+	override fun sendInviteMail(request: InviteMailRequest): Mono<InviteMailResponse> =
+		Mono.defer {
+			val recipientEmails = request.recipientEmails()
+			if (recipientEmails.isEmpty()) {
+				return@defer Mono.error(AppException(ErrorCode.INVALID_REQUEST, "At least one email is required."))
+			}
+
+			Flux.fromIterable(recipientEmails)
+				.concatMap { recipientEmail ->
+					usernameSequenceService.nextSequence()
+						.flatMap { sequence ->
+							val username = "user_${sequence.toString().padStart(2, '0')}"
+							createInviteProvisionedUser(
+								username = username,
+								request = CreateAdminUserRequest(
+									role = request.role,
+									provisionType = ProvisionType.INVITE,
+								),
+							).flatMap { created ->
+								val inviteLink = created.inviteLink
+									?: return@flatMap Mono.error(
+										AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to issue invite link."),
+									)
+								val expiresAt = created.expiresAt
+									?: return@flatMap Mono.error(
+										AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to issue invite expiration."),
+									)
+								inviteMailService
+									.sendInviteMail(
+										toEmail = recipientEmail,
+										username = created.username,
+										role = created.role,
+										inviteUrl = inviteLink,
+										expiresAt = expiresAt,
+									)
+									.thenReturn(
+										InviteMailTarget(
+											email = recipientEmail,
+											username = created.username,
+											role = created.role,
+											inviteExpiresAt = expiresAt,
+										),
+									)
+							}
+						}
+				}
+				.collectList()
+				.map { invites ->
+					val singleInvite = invites.singleOrNull()
+					InviteMailResponse(
+						sentCount = invites.size,
+						invites = invites,
+						username = singleInvite?.username,
+						role = singleInvite?.role,
+						inviteExpiresAt = singleInvite?.inviteExpiresAt,
+					)
+				}
+		}
 
 	private fun createPasswordProvisionedUser(
 		username: String,

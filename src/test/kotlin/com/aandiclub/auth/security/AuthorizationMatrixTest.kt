@@ -228,6 +228,17 @@ class AuthorizationMatrixTest : StringSpec() {
 				.expectStatus().isForbidden
 		}
 
+		"POST /v1/admin/invite-mail denies USER role" {
+			val token = accessToken(UUID.randomUUID(), "tester_user_invite_mail_denied", UserRole.USER)
+			webClient().post()
+				.uri("/v1/admin/invite-mail")
+				.headers { it.setBearerAuth(token) }
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue("""{"email":"new_member@aandi.club","role":"USER"}""")
+				.exchange()
+				.expectStatus().isForbidden
+		}
+
 			"GET /v1/admin/ping allows ADMIN role" {
 				val token = accessToken(UUID.randomUUID(), "tester_admin", UserRole.ADMIN)
 				webClient().get()

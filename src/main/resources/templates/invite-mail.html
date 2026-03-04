@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A&I Club Invitation</title>
+</head>
+<body style="margin:0;padding:0;background-color:#03040a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans KR','Apple SD Gothic Neo',sans-serif;">
+<table role="presentation" style="width:100%;border-collapse:collapse;background-color:#03040a;padding:24px 0;">
+  <tr>
+    <td align="center" style="padding:16px;">
+      <table role="presentation" style="width:100%;max-width:640px;border-collapse:collapse;background:linear-gradient(180deg,#0a0f1f 0%,#04060f 100%);border:1px solid #1b2c63;border-radius:18px;box-shadow:0 0 0 1px rgba(74,125,255,0.2),0 20px 48px rgba(0,0,0,0.55);overflow:hidden;">
+        <tr>
+          <td style="padding:34px 34px 18px;color:#f4f7ff;">
+            <p style="margin:0 0 8px;color:#8aa9ff;font-size:12px;letter-spacing:1.4px;font-weight:700;">A&I CLUB INVITATION</p>
+            <h1 style="margin:0;color:#f6f8ff;font-size:28px;line-height:1.35;font-weight:800;">
+              함께 성장할<br>새로운 동아리원을 초대합니다
+            </h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 34px 26px;">
+            <div style="height:3px;border-radius:999px;background:linear-gradient(90deg,#102a7d 0%,#4f78ff 52%,#102a7d 100%);box-shadow:0 0 16px rgba(79,120,255,0.85);"></div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 34px 8px;color:#ced8ff;font-size:15px;line-height:1.7;">
+            안녕하세요.<br>
+            본 메일은 <strong style="color:#ffffff;">A&amp;I 개발동아리 운영진(aandiclub.com)</strong>이 발송한 공식 초대 메일입니다.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 34px 8px;">
+            <table role="presentation" style="width:100%;border-collapse:collapse;background-color:#0a122a;border:1px solid #233a7a;border-radius:12px;">
+              <tr>
+                <td style="padding:18px 18px 8px;color:#7f97d8;font-size:12px;letter-spacing:0.8px;font-weight:600;">생성된 아이디</td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 16px;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:0.4px;" th:text="${username}">user_01</td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 8px;color:#7f97d8;font-size:12px;letter-spacing:0.8px;font-weight:600;">권한</td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 20px;">
+                  <span style="display:inline-block;padding:7px 12px;border-radius:999px;border:1px solid #2d4ea8;background-color:#112255;color:#c9d8ff;font-size:12px;font-weight:700;" th:text="${role}">USER</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px 34px 8px;color:#d4ddff;font-size:14px;line-height:1.7;">
+            아래 버튼을 눌러 초대 수락 및 계정 활성화를 진행해 주세요.
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:10px 34px 16px;">
+            <a th:href="${inviteUrl}" style="display:inline-block;background:linear-gradient(90deg,#2c5cff 0%,#5f8dff 100%);color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:800;letter-spacing:0.2px;">
+              초대 수락하고 가입하기
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 34px 8px;color:#97abd8;font-size:12px;line-height:1.6;">
+            버튼이 작동하지 않으면 아래 URL을 브라우저에 붙여넣어 주세요.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 34px 16px;">
+            <a th:href="${inviteUrl}" th:text="${inviteUrl}" style="color:#9bb3ff;font-size:12px;word-break:break-all;text-decoration:underline;">https://aandiclub.com/invite</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 34px 26px;color:#9aacd4;font-size:12px;line-height:1.6;">
+            링크 만료 시각(UTC):
+            <strong style="color:#dce6ff;" th:text="${expiresAt}">2026-03-04T00:00:00Z</strong>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:18px 34px 24px;background-color:#060a17;border-top:1px solid #1c2f66;color:#7f91be;font-size:12px;line-height:1.6;text-align:center;">
+            본 메일은 발신 전용입니다.<br>
+            © A&amp;I Club. All rights reserved.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

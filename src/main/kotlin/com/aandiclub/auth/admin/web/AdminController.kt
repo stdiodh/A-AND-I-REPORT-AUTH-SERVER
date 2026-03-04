@@ -5,6 +5,8 @@ import com.aandiclub.auth.admin.web.dto.AdminUserSummary
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserResponse
 import com.aandiclub.auth.admin.web.dto.DeleteUserRequest
+import com.aandiclub.auth.admin.web.dto.InviteMailRequest
+import com.aandiclub.auth.admin.web.dto.InviteMailResponse
 import com.aandiclub.auth.admin.web.dto.ResetPasswordResponse
 import com.aandiclub.auth.admin.web.dto.UpdateUserRoleRequest
 import com.aandiclub.auth.admin.web.dto.UpdateUserRoleResponse
@@ -39,6 +41,10 @@ class AdminController(
 	@PostMapping("/users")
 	fun createUser(@RequestBody request: CreateAdminUserRequest): Mono<ApiResponse<CreateAdminUserResponse>> =
 		adminService.createUser(request).map { ApiResponse.success(it) }
+
+	@PostMapping("/invite-mail")
+	fun sendInviteMail(@Valid @RequestBody request: InviteMailRequest): Mono<ApiResponse<InviteMailResponse>> =
+		adminService.sendInviteMail(request).map { ApiResponse.success(it) }
 
 	@PostMapping("/users/{id}/reset-password")
 	fun resetPassword(@PathVariable id: UUID): Mono<ApiResponse<ResetPasswordResponse>> =

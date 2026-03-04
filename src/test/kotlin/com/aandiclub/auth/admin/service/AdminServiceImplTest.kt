@@ -5,9 +5,11 @@ import com.aandiclub.auth.admin.domain.UserInviteEntity
 import com.aandiclub.auth.admin.invite.InviteTokenCacheService
 import com.aandiclub.auth.admin.password.CredentialGenerator
 import com.aandiclub.auth.admin.repository.UserInviteRepository
+import com.aandiclub.auth.admin.service.InviteMailService
 import com.aandiclub.auth.admin.sequence.UsernameSequenceService
 import com.aandiclub.auth.admin.service.impl.AdminServiceImpl
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
+import com.aandiclub.auth.admin.web.dto.InviteMailRequest
 import com.aandiclub.auth.admin.web.dto.ProvisionType
 import com.aandiclub.auth.common.error.AppException
 import com.aandiclub.auth.common.error.ErrorCode
@@ -38,6 +40,7 @@ class AdminServiceImplTest : FunSpec({
 	val credentialGenerator = mockk<CredentialGenerator>()
 	val passwordService = mockk<PasswordService>()
 	val tokenHashService = mockk<TokenHashService>()
+	val inviteMailService = mockk<InviteMailService>()
 	val clock = Clock.fixed(Instant.parse("2026-02-18T00:00:00Z"), ZoneOffset.UTC)
 
 	val service = AdminServiceImpl(
@@ -52,6 +55,7 @@ class AdminServiceImplTest : FunSpec({
 			activationBaseUrl = "https://your-domain.com/activate",
 			expirationHours = 72,
 		),
+		inviteMailService = inviteMailService,
 		clock = clock,
 	)
 
@@ -214,7 +218,111 @@ class AdminServiceImplTest : FunSpec({
 				users[0].username shouldBe "user_01"
 				users[1].role shouldBe UserRole.ADMIN
 			}
+				.verifyComplete()
+	}
+
+	test("sendInviteMail should create invite user and send invite email") {
+		val userId = UUID.randomUUID()
+		val savedUser = UserEntity(
+			id = userId,
+			username = "user_03",
+			passwordHash = "placeholder-hash",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+		val inviteSlot = slot<UserInviteEntity>()
+
+		every { usernameSequenceService.nextSequence() } returns Mono.just(3)
+		every { credentialGenerator.randomToken(any()) } returns "invite-mail-token"
+		every { tokenHashService.sha256Hex("invite-mail-token") } returns "invite-mail-hash"
+		every { credentialGenerator.randomPassword(32) } returns "D".repeat(32)
+		every { passwordService.hash("D".repeat(32)) } returns "placeholder-hash"
+		every { userRepository.save(any()) } returns Mono.just(savedUser)
+		every { userInviteRepository.save(capture(inviteSlot)) } answers { Mono.just(firstArg()) }
+		every { inviteTokenCacheService.cacheToken("invite-mail-hash", "invite-mail-token", any()) } returns Mono.just(true)
+		every {
+			inviteMailService.sendInviteMail(
+				toEmail = "new_member@aandi.club",
+				username = "user_03",
+				role = UserRole.USER,
+				inviteUrl = "https://your-domain.com/activate?token=invite-mail-token",
+				expiresAt = any(),
+			)
+		} returns Mono.empty()
+
+		StepVerifier.create(service.sendInviteMail(InviteMailRequest(email = "new_member@aandi.club", role = UserRole.USER)))
+			.assertNext { response ->
+				response.sentCount shouldBe 1
+				response.username shouldBe "user_03"
+				response.role shouldBe UserRole.USER
+				response.invites.size shouldBe 1
+				response.invites[0].email shouldBe "new_member@aandi.club"
+			}
 			.verifyComplete()
+
+		inviteSlot.captured.userId shouldBe userId
+	}
+
+	test("sendInviteMail should send to multiple emails and keep backward-compatible single fields null") {
+		val savedUser1 = UserEntity(
+			id = UUID.randomUUID(),
+			username = "user_04",
+			passwordHash = "placeholder-hash",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+		val savedUser2 = UserEntity(
+			id = UUID.randomUUID(),
+			username = "user_05",
+			passwordHash = "placeholder-hash",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+		var sequence = 3L
+
+		every { usernameSequenceService.nextSequence() } answers {
+			sequence += 1L
+			Mono.just(sequence)
+		}
+		every { credentialGenerator.randomToken(any()) } returnsMany listOf("invite-token-1", "invite-token-2")
+		every { tokenHashService.sha256Hex("invite-token-1") } returns "invite-hash-1"
+		every { tokenHashService.sha256Hex("invite-token-2") } returns "invite-hash-2"
+		every { credentialGenerator.randomPassword(32) } returns "E".repeat(32)
+		every { passwordService.hash("E".repeat(32)) } returns "placeholder-hash"
+		every { userRepository.save(any()) } returnsMany listOf(Mono.just(savedUser1), Mono.just(savedUser2))
+		every { userInviteRepository.save(any()) } answers { Mono.just(firstArg()) }
+		every { inviteTokenCacheService.cacheToken(any(), any(), any()) } returns Mono.just(true)
+		every { inviteMailService.sendInviteMail(any(), any(), any(), any(), any()) } returns Mono.empty()
+
+		StepVerifier.create(
+			service.sendInviteMail(
+				InviteMailRequest(
+					emails = listOf("new_member_1@aandi.club", "new_member_2@aandi.club"),
+					role = UserRole.USER,
+				),
+			),
+		)
+			.assertNext { response ->
+				response.sentCount shouldBe 2
+				response.username shouldBe null
+				response.role shouldBe null
+				response.inviteExpiresAt shouldBe null
+				response.invites.size shouldBe 2
+				response.invites[0].email shouldBe "new_member_1@aandi.club"
+				response.invites[1].email shouldBe "new_member_2@aandi.club"
+			}
+			.verifyComplete()
+	}
+
+	test("sendInviteMail should reject request when no recipient emails are provided") {
+		StepVerifier.create(service.sendInviteMail(InviteMailRequest(role = UserRole.USER)))
+			.expectErrorSatisfies { ex ->
+				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
+			}
+			.verify()
 	}
 
 	test("deleteUser should delete target user and cleanup invite tokens") {

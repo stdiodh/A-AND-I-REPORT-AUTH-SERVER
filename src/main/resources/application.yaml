@@ -10,6 +10,17 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:false}
+          starttls:
+            enable: ${SMTP_STARTTLS:false}
   flyway:
     enabled: ${DB_MIGRATION_ENABLED:true}
     url: ${DB_JDBC_URL:jdbc:postgresql://localhost:5432/auth}
@@ -46,6 +57,10 @@ app:
   invite:
     activation-base-url: ${APP_INVITE_ACTIVATION_BASE_URL:https://your-domain.com/activate}
     expiration-hours: ${APP_INVITE_EXPIRATION_HOURS:72}
+  invite-mail:
+    subject: ${APP_INVITE_MAIL_SUBJECT:A&I 개발동아리 신규 동아리원 초대 안내}
+    from: ${APP_INVITE_MAIL_FROM:}
+    from-name: ${APP_INVITE_MAIL_FROM_NAME:A&I 개발동아리 운영진}
   profile:
     allowed-image-hosts: ${APP_PROFILE_ALLOWED_IMAGE_HOSTS:}
   profile-image:
