@@ -51,13 +51,16 @@ class AdminServiceImpl(
 			.collectList()
 
 	override fun createUser(request: CreateAdminUserRequest): Mono<CreateAdminUserResponse> =
-		usernameSequenceService.nextSequence()
+		Mono.fromCallable { resolveProvisioningProfile(request.userTrack, request.cohort, request.cohortOrder) }
+			.flatMap { provisioningProfile ->
+				usernameSequenceService.nextSequence()
 			.flatMap { sequence ->
 				val username = "user_${sequence.toString().padStart(2, '0')}"
 				when (request.provisionType) {
-					ProvisionType.PASSWORD -> createPasswordProvisionedUser(username, request)
-					ProvisionType.INVITE -> createInviteProvisionedUser(username, request)
+					ProvisionType.PASSWORD -> createPasswordProvisionedUser(username, request, provisioningProfile)
+					ProvisionType.INVITE -> createInviteProvisionedUser(username, request, provisioningProfile)
 				}
+			}
 			}
 
 	override fun resetPassword(userId: UUID): Mono<ResetPasswordResponse> =
@@ -129,6 +132,7 @@ class AdminServiceImpl(
 			if (recipientEmails.isEmpty()) {
 				return@defer Mono.error(AppException(ErrorCode.INVALID_REQUEST, "At least one email is required."))
 			}
+			val provisioningProfile = resolveProvisioningProfile(request.userTrack, request.cohort, request.cohortOrder)
 
 			Flux.fromIterable(recipientEmails)
 				.concatMap { recipientEmail ->
@@ -141,6 +145,7 @@ class AdminServiceImpl(
 									role = request.role,
 									provisionType = ProvisionType.INVITE,
 								),
+								provisioningProfile = provisioningProfile,
 							).flatMap { created ->
 								val inviteLink = created.inviteLink
 									?: return@flatMap Mono.error(
@@ -157,6 +162,10 @@ class AdminServiceImpl(
 										role = created.role,
 										inviteUrl = inviteLink,
 										expiresAt = expiresAt,
+										userTrack = created.userTrack,
+										cohort = created.cohort,
+										cohortOrder = created.cohortOrder,
+										publicCode = created.publicCode,
 									)
 									.thenReturn(
 										InviteMailTarget(
@@ -164,6 +173,10 @@ class AdminServiceImpl(
 											username = created.username,
 											role = created.role,
 											inviteExpiresAt = expiresAt,
+											userTrack = created.userTrack,
+											cohort = created.cohort,
+											cohortOrder = created.cohortOrder,
+											publicCode = created.publicCode,
 										),
 									)
 							}
@@ -178,6 +191,10 @@ class AdminServiceImpl(
 						username = singleInvite?.username,
 						role = singleInvite?.role,
 						inviteExpiresAt = singleInvite?.inviteExpiresAt,
+						cohort = singleInvite?.cohort,
+						cohortOrder = singleInvite?.cohortOrder,
+						userTrack = singleInvite?.userTrack,
+						publicCode = singleInvite?.publicCode,
 					)
 				}
 		}
@@ -185,6 +202,7 @@ class AdminServiceImpl(
 	private fun createPasswordProvisionedUser(
 		username: String,
 		request: CreateAdminUserRequest,
+		provisioningProfile: ProvisioningProfile,
 	): Mono<CreateAdminUserResponse> {
 		val temporaryPassword = credentialGenerator.randomPassword(32)
 		val hashedPassword = passwordService.hash(temporaryPassword)
@@ -195,6 +213,9 @@ class AdminServiceImpl(
 				role = request.role,
 				forcePasswordChange = true,
 				isActive = true,
+				userTrack = provisioningProfile.userTrack,
+				cohort = provisioningProfile.cohort,
+				cohortOrder = provisioningProfile.cohortOrder,
 			),
 		).map { saved ->
 			logger.warn("security_audit event=admin_user_created type=password user_id={} username={} role={}", saved.id, saved.username, saved.role)
@@ -204,6 +225,10 @@ class AdminServiceImpl(
 				role = saved.role,
 				provisionType = ProvisionType.PASSWORD,
 				temporaryPassword = temporaryPassword,
+				userTrack = saved.userTrack,
+				cohort = saved.cohort,
+				cohortOrder = saved.cohortOrder,
+				publicCode = saved.publicCode,
 			)
 		}
 	}
@@ -211,6 +236,7 @@ class AdminServiceImpl(
 	private fun createInviteProvisionedUser(
 		username: String,
 		request: CreateAdminUserRequest,
+		provisioningProfile: ProvisioningProfile,
 	): Mono<CreateAdminUserResponse> {
 		val rawInviteToken = credentialGenerator.randomToken()
 		val hashedInviteToken = tokenHashService.sha256Hex(rawInviteToken)
@@ -224,6 +250,9 @@ class AdminServiceImpl(
 				role = request.role,
 				forcePasswordChange = true,
 				isActive = false,
+				userTrack = provisioningProfile.userTrack,
+				cohort = provisioningProfile.cohort,
+				cohortOrder = provisioningProfile.cohortOrder,
 			),
 		).flatMap { savedUser ->
 			userInviteRepository.save(
@@ -251,10 +280,52 @@ class AdminServiceImpl(
 					provisionType = ProvisionType.INVITE,
 					inviteLink = "${inviteProperties.activationBaseUrl}?token=$rawInviteToken",
 					expiresAt = expiresAt,
+					userTrack = savedUser.userTrack,
+					cohort = savedUser.cohort,
+					cohortOrder = savedUser.cohortOrder,
+					publicCode = savedUser.publicCode,
 				)
 			}
 		}
 	}
+
+	private fun resolveProvisioningProfile(
+		rawUserTrack: String?,
+		rawCohort: Int?,
+		rawCohortOrder: Int?,
+	): ProvisioningProfile {
+		val userTrack = rawUserTrack?.trim()?.uppercase()
+			?.takeIf { it.isNotEmpty() }
+			?: DEFAULT_USER_TRACK
+		if (userTrack !in ALLOWED_USER_TRACKS) {
+			throw AppException(
+				ErrorCode.INVALID_REQUEST,
+				"userTrack must be one of ${ALLOWED_USER_TRACKS.joinToString(", ")}.",
+			)
+		}
+
+		val cohort = rawCohort ?: 0
+		if (cohort < 0) {
+			throw AppException(ErrorCode.INVALID_REQUEST, "cohort must be greater than or equal to 0.")
+		}
+
+		val cohortOrder = rawCohortOrder ?: 0
+		if (cohortOrder < 0) {
+			throw AppException(ErrorCode.INVALID_REQUEST, "cohortOrder must be greater than or equal to 0.")
+		}
+
+		return ProvisioningProfile(
+			userTrack = userTrack,
+			cohort = cohort,
+			cohortOrder = cohortOrder,
+		)
+	}
+
+	private data class ProvisioningProfile(
+		val userTrack: String,
+		val cohort: Int,
+		val cohortOrder: Int,
+	)
 
 	private fun toAdminUserSummary(user: UserEntity, now: java.time.Instant): Mono<AdminUserSummary> {
 		val baseSummary = AdminUserSummary(
@@ -287,5 +358,7 @@ class AdminServiceImpl(
 
 	companion object {
 		private val logger = LoggerFactory.getLogger(AdminServiceImpl::class.java)
+		private const val DEFAULT_USER_TRACK = "NO"
+		private val ALLOWED_USER_TRACKS = setOf("NO", "FL", "SP")
 	}
 }

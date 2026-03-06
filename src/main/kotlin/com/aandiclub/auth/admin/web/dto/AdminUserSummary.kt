@@ -17,6 +17,9 @@ data class AdminUserSummary(
 data class CreateAdminUserRequest(
 	val role: UserRole = UserRole.USER,
 	val provisionType: ProvisionType = ProvisionType.INVITE,
+	val cohort: Int? = null,
+	val cohortOrder: Int? = null,
+	val userTrack: String? = null,
 )
 
 data class CreateAdminUserResponse(
@@ -27,6 +30,10 @@ data class CreateAdminUserResponse(
 	val inviteLink: String? = null,
 	val expiresAt: Instant? = null,
 	val temporaryPassword: String? = null,
+	val cohort: Int = 0,
+	val cohortOrder: Int = 0,
+	val userTrack: String = "NO",
+	val publicCode: String? = null,
 )
 
 data class ResetPasswordResponse(

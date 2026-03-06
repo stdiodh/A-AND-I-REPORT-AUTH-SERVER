@@ -46,6 +46,28 @@
                   <span style="display:inline-block;padding:7px 12px;border-radius:999px;border:1px solid #2d4ea8;background-color:#112255;color:#c9d8ff;font-size:12px;font-weight:700;" th:text="${role}">USER</span>
                 </td>
               </tr>
+              <tr>
+                <td style="padding:0 18px 8px;color:#7f97d8;font-size:12px;letter-spacing:0.8px;font-weight:600;">트랙</td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 16px;color:#f3f7ff;font-size:14px;font-weight:700;" th:text="${userTrack}">미설정</td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 8px;color:#7f97d8;font-size:12px;letter-spacing:0.8px;font-weight:600;">기수 / 순번</td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 16px;color:#f3f7ff;font-size:14px;font-weight:700;">
+                  <span th:text="${cohort}">미설정</span>
+                  <span> / </span>
+                  <span th:text="${cohortOrder}">미설정</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 8px;color:#7f97d8;font-size:12px;letter-spacing:0.8px;font-weight:600;">Public Code</td>
+              </tr>
+              <tr>
+                <td style="padding:0 18px 20px;color:#f3f7ff;font-size:14px;font-weight:700;" th:text="${publicCode}">-</td>
+              </tr>
             </table>
           </td>
         </tr>

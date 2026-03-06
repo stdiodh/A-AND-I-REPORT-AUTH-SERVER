@@ -45,20 +45,24 @@ class AuthorizationMatrixTest : StringSpec() {
 			beforeSpec {
 				databaseClient.sql(
 					"""
-				CREATE TABLE IF NOT EXISTS "users" (
-					"id" UUID PRIMARY KEY,
-					"username" VARCHAR(64) NOT NULL UNIQUE,
-					"password_hash" VARCHAR(255) NOT NULL,
-					"role" VARCHAR(32) NOT NULL,
-					"force_password_change" BOOLEAN NOT NULL DEFAULT FALSE,
-					"is_active" BOOLEAN NOT NULL DEFAULT TRUE,
-					"last_login_at" TIMESTAMP NULL,
-					"nickname" VARCHAR(40) NULL,
-					"profile_image_url" VARCHAR(2048) NULL,
-					"profile_version" BIGINT NOT NULL DEFAULT 0,
-					"created_at" TIMESTAMP NOT NULL,
-					"updated_at" TIMESTAMP NOT NULL
-				)
+					CREATE TABLE IF NOT EXISTS "users" (
+						"id" UUID PRIMARY KEY,
+						"username" VARCHAR(64) NOT NULL UNIQUE,
+						"password_hash" VARCHAR(255) NOT NULL,
+						"role" VARCHAR(32) NOT NULL,
+						"force_password_change" BOOLEAN NOT NULL DEFAULT FALSE,
+						"is_active" BOOLEAN NOT NULL DEFAULT TRUE,
+						"last_login_at" TIMESTAMP NULL,
+						"nickname" VARCHAR(40) NULL,
+						"profile_image_url" VARCHAR(2048) NULL,
+						"profile_version" BIGINT NOT NULL DEFAULT 0,
+						"user_track" VARCHAR(16) NOT NULL DEFAULT 'NO',
+						"cohort" INTEGER NOT NULL DEFAULT 0,
+						"cohort_order" INTEGER NOT NULL DEFAULT 0,
+						"public_code" VARCHAR(16) NOT NULL,
+						"created_at" TIMESTAMP NOT NULL,
+						"updated_at" TIMESTAMP NOT NULL
+					)
 					""".trimIndent(),
 				).fetch().rowsUpdated().block()
 				databaseClient.sql(
@@ -330,33 +334,41 @@ class AuthorizationMatrixTest : StringSpec() {
 	private fun insertUser(userId: UUID, username: String, role: UserRole) {
 		databaseClient.sql(
 			"""
-			INSERT INTO "users" (
-				"id",
-				"username",
-				"password_hash",
-				"role",
-				"force_password_change",
-				"is_active",
-				"last_login_at",
-				"nickname",
-				"profile_image_url",
-				"profile_version",
-				"created_at",
-				"updated_at"
-			) VALUES (
-				:userId,
-				:username,
+				INSERT INTO "users" (
+					"id",
+					"username",
+					"password_hash",
+					"role",
+					"force_password_change",
+					"is_active",
+					"last_login_at",
+					"nickname",
+					"profile_image_url",
+					"profile_version",
+					"user_track",
+					"cohort",
+					"cohort_order",
+					"public_code",
+					"created_at",
+					"updated_at"
+				) VALUES (
+					:userId,
+					:username,
 				:passwordHash,
 				:role,
 				:forcePasswordChange,
 				:isActive,
-				:lastLoginAt,
-				:nickname,
-				:profileImageUrl,
-				:profileVersion,
-				:createdAt,
-				:updatedAt
-			)
+					:lastLoginAt,
+					:nickname,
+					:profileImageUrl,
+					:profileVersion,
+					:userTrack,
+					:cohort,
+					:cohortOrder,
+					:publicCode,
+					:createdAt,
+					:updatedAt
+				)
 			""".trimIndent(),
 		)
 			.bind("userId", userId)
@@ -366,11 +378,15 @@ class AuthorizationMatrixTest : StringSpec() {
 			.bind("forcePasswordChange", false)
 			.bind("isActive", true)
 			.bindNull("lastLoginAt", Instant::class.java)
-			.bindNull("nickname", String::class.java)
-			.bindNull("profileImageUrl", String::class.java)
-			.bind("profileVersion", 0L)
-			.bind("createdAt", Instant.now())
-			.bind("updatedAt", Instant.now())
+				.bindNull("nickname", String::class.java)
+				.bindNull("profileImageUrl", String::class.java)
+				.bind("profileVersion", 0L)
+				.bind("userTrack", "NO")
+				.bind("cohort", 0)
+				.bind("cohortOrder", 0)
+				.bind("publicCode", userId.toString().replace("-", "").take(16))
+				.bind("createdAt", Instant.now())
+				.bind("updatedAt", Instant.now())
 			.fetch()
 			.rowsUpdated()
 			.block()

@@ -30,6 +30,10 @@ class InviteMailService(
 		role: UserRole,
 		inviteUrl: String,
 		expiresAt: Instant,
+		userTrack: String,
+		cohort: Int,
+		cohortOrder: Int,
+		publicCode: String?,
 	): Mono<Void> =
 		Mono.fromCallable {
 			val mailSender = mailSenderProvider.ifAvailable
@@ -51,6 +55,10 @@ class InviteMailService(
 					role = role,
 					inviteUrl = inviteUrl,
 					expiresAt = expiresAt,
+					userTrack = userTrack,
+					cohort = cohort,
+					cohortOrder = cohortOrder,
+					publicCode = publicCode,
 				),
 				true,
 			)
@@ -84,12 +92,20 @@ class InviteMailService(
 		role: UserRole,
 		inviteUrl: String,
 		expiresAt: Instant,
+		userTrack: String,
+		cohort: Int,
+		cohortOrder: Int,
+		publicCode: String?,
 	): String {
 		val context = Context()
 		context.setVariable("username", username)
 		context.setVariable("role", role.name)
 		context.setVariable("inviteUrl", inviteUrl)
 		context.setVariable("expiresAt", expiresAt.toString())
+		context.setVariable("userTrack", if (userTrack == "NO") "미설정" else userTrack)
+		context.setVariable("cohort", if (cohort == 0) "미설정" else "${cohort}기")
+		context.setVariable("cohortOrder", if (cohortOrder == 0) "미설정" else "${cohortOrder}번")
+		context.setVariable("publicCode", publicCode ?: "-")
 		return templateEngine.process(TEMPLATE_NAME, context)
 	}
 

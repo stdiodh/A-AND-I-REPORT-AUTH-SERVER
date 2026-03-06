@@ -90,6 +90,10 @@ class AdminServiceImplTest : FunSpec({
 		savedEntitySlot.captured.username shouldBe "user_01"
 		savedEntitySlot.captured.passwordHash shouldBe "hashed-password"
 		savedEntitySlot.captured.forcePasswordChange shouldBe true
+		savedEntitySlot.captured.userTrack shouldBe "NO"
+		savedEntitySlot.captured.cohort shouldBe 0
+		savedEntitySlot.captured.cohortOrder shouldBe 0
+		savedEntitySlot.captured.publicCode shouldBe "user_01"
 	}
 
 	test("createUser INVITE should return one-time invite link and inactive account") {
@@ -127,6 +131,10 @@ class AdminServiceImplTest : FunSpec({
 
 		savedUserSlot.captured.isActive shouldBe false
 		savedUserSlot.captured.forcePasswordChange shouldBe true
+		savedUserSlot.captured.userTrack shouldBe "NO"
+		savedUserSlot.captured.cohort shouldBe 0
+		savedUserSlot.captured.cohortOrder shouldBe 0
+		savedUserSlot.captured.publicCode shouldBe "user_02"
 		inviteSlot.captured.userId shouldBe userId
 		inviteSlot.captured.tokenHash shouldBe "invite-hash"
 	}
@@ -232,24 +240,29 @@ class AdminServiceImplTest : FunSpec({
 			isActive = false,
 		)
 		val inviteSlot = slot<UserInviteEntity>()
+		val savedUserSlot = slot<UserEntity>()
 
 		every { usernameSequenceService.nextSequence() } returns Mono.just(3)
 		every { credentialGenerator.randomToken(any()) } returns "invite-mail-token"
 		every { tokenHashService.sha256Hex("invite-mail-token") } returns "invite-mail-hash"
 		every { credentialGenerator.randomPassword(32) } returns "D".repeat(32)
 		every { passwordService.hash("D".repeat(32)) } returns "placeholder-hash"
-		every { userRepository.save(any()) } returns Mono.just(savedUser)
+		every { userRepository.save(capture(savedUserSlot)) } returns Mono.just(savedUser)
 		every { userInviteRepository.save(capture(inviteSlot)) } answers { Mono.just(firstArg()) }
 		every { inviteTokenCacheService.cacheToken("invite-mail-hash", "invite-mail-token", any()) } returns Mono.just(true)
-		every {
-			inviteMailService.sendInviteMail(
-				toEmail = "new_member@aandi.club",
-				username = "user_03",
-				role = UserRole.USER,
-				inviteUrl = "https://your-domain.com/activate?token=invite-mail-token",
-				expiresAt = any(),
-			)
-		} returns Mono.empty()
+			every {
+				inviteMailService.sendInviteMail(
+					toEmail = "new_member@aandi.club",
+					username = "user_03",
+					role = UserRole.USER,
+					inviteUrl = "https://your-domain.com/activate?token=invite-mail-token",
+					expiresAt = any(),
+					userTrack = "NO",
+					cohort = 0,
+					cohortOrder = 0,
+					publicCode = "user_03",
+				)
+			} returns Mono.empty()
 
 		StepVerifier.create(service.sendInviteMail(InviteMailRequest(email = "new_member@aandi.club", role = UserRole.USER)))
 			.assertNext { response ->
@@ -262,6 +275,10 @@ class AdminServiceImplTest : FunSpec({
 			.verifyComplete()
 
 		inviteSlot.captured.userId shouldBe userId
+		savedUserSlot.captured.userTrack shouldBe "NO"
+		savedUserSlot.captured.cohort shouldBe 0
+		savedUserSlot.captured.cohortOrder shouldBe 0
+		savedUserSlot.captured.publicCode shouldBe "user_03"
 	}
 
 	test("sendInviteMail should send to multiple emails and keep backward-compatible single fields null") {
@@ -293,9 +310,9 @@ class AdminServiceImplTest : FunSpec({
 		every { credentialGenerator.randomPassword(32) } returns "E".repeat(32)
 		every { passwordService.hash("E".repeat(32)) } returns "placeholder-hash"
 		every { userRepository.save(any()) } returnsMany listOf(Mono.just(savedUser1), Mono.just(savedUser2))
-		every { userInviteRepository.save(any()) } answers { Mono.just(firstArg()) }
-		every { inviteTokenCacheService.cacheToken(any(), any(), any()) } returns Mono.just(true)
-		every { inviteMailService.sendInviteMail(any(), any(), any(), any(), any()) } returns Mono.empty()
+			every { userInviteRepository.save(any()) } answers { Mono.just(firstArg()) }
+			every { inviteTokenCacheService.cacheToken(any(), any(), any()) } returns Mono.just(true)
+			every { inviteMailService.sendInviteMail(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns Mono.empty()
 
 		StepVerifier.create(
 			service.sendInviteMail(
@@ -315,6 +332,72 @@ class AdminServiceImplTest : FunSpec({
 				response.invites[1].email shouldBe "new_member_2@aandi.club"
 			}
 			.verifyComplete()
+	}
+
+	test("sendInviteMail should persist and return cohort and track when provided") {
+		val savedUser = UserEntity(
+			id = UUID.randomUUID(),
+			username = "user_06",
+			passwordHash = "placeholder-hash",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+			userTrack = "FL",
+			cohort = 10,
+			cohortOrder = 3,
+			publicCode = "user_06",
+		)
+		val savedUserSlot = slot<UserEntity>()
+
+		every { usernameSequenceService.nextSequence() } returns Mono.just(6)
+		every { credentialGenerator.randomToken(any()) } returns "invite-token-6"
+		every { tokenHashService.sha256Hex("invite-token-6") } returns "invite-hash-6"
+		every { credentialGenerator.randomPassword(32) } returns "F".repeat(32)
+		every { passwordService.hash("F".repeat(32)) } returns "placeholder-hash"
+		every { userRepository.save(capture(savedUserSlot)) } returns Mono.just(savedUser)
+		every { userInviteRepository.save(any()) } answers { Mono.just(firstArg()) }
+		every { inviteTokenCacheService.cacheToken(any(), any(), any()) } returns Mono.just(true)
+		every { inviteMailService.sendInviteMail(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns Mono.empty()
+
+		StepVerifier.create(
+			service.sendInviteMail(
+				InviteMailRequest(
+					email = "new_member@aandi.club",
+					role = UserRole.USER,
+					cohort = 10,
+					cohortOrder = 3,
+					userTrack = "fl",
+				),
+			),
+		)
+			.assertNext { response ->
+				response.sentCount shouldBe 1
+				response.cohort shouldBe 10
+				response.cohortOrder shouldBe 3
+				response.userTrack shouldBe "FL"
+				response.publicCode shouldBe "user_06"
+			}
+			.verifyComplete()
+
+		savedUserSlot.captured.cohort shouldBe 10
+		savedUserSlot.captured.cohortOrder shouldBe 3
+		savedUserSlot.captured.userTrack shouldBe "FL"
+	}
+
+	test("sendInviteMail should reject unsupported userTrack") {
+		StepVerifier.create(
+			service.sendInviteMail(
+				InviteMailRequest(
+					email = "new_member@aandi.club",
+					role = UserRole.USER,
+					userTrack = "XX",
+				),
+			),
+		)
+			.expectErrorSatisfies { ex ->
+				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
+			}
+			.verify()
 	}
 
 	test("sendInviteMail should reject request when no recipient emails are provided") {
