@@ -60,11 +60,11 @@ class AdminServiceImpl(
 
 	override fun createUser(request: CreateAdminUserRequest): Mono<CreateAdminUserResponse> =
 		Mono.zip(
-			usernameSequenceService.nextSequence(),
-			usernameSequenceService.nextCohortOrderSequence(request.cohort),
+			nextValidUserSequence(),
+			allocateCohortOrder(request.cohort),
 		).flatMap { tuple ->
 			val username = "user_${tuple.t1.toString().padStart(2, '0')}"
-			val cohortOrder = tuple.t2.toInt()
+			val cohortOrder = tuple.t2
 			val userTrack = userPublicCodeService.resolveTrack(request.role, null)
 			val publicCode = userPublicCodeService.generate(
 				role = request.role,
@@ -121,44 +121,51 @@ class AdminServiceImpl(
 		return userRepository.findById(targetUserId)
 			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
 			.flatMap { user ->
-				val resolvedTrack = userPublicCodeService.resolveTrack(
-					role = role,
-					requestedTrack = if (role == UserRole.USER) user.userTrack else null,
-				)
-				val recalculatedPublicCode = userPublicCodeService.generate(
-					role = role,
-					userTrack = resolvedTrack,
-					cohort = user.cohort,
-					cohortOrder = user.cohortOrder,
-				)
-				userRepository.save(
-					user.copy(
+				resolveCohortOrderForUpdate(
+					originalCohort = user.cohort,
+					originalCohortOrder = user.cohortOrder,
+					resolvedCohort = user.cohort,
+				).flatMap { resolvedCohortOrder ->
+					val resolvedTrack = userPublicCodeService.resolveTrack(
+						role = role,
+						requestedTrack = if (role == UserRole.USER) user.userTrack else null,
+					)
+					val recalculatedPublicCode = userPublicCodeService.generate(
 						role = role,
 						userTrack = resolvedTrack,
-						publicCode = recalculatedPublicCode,
-					),
-				).flatMap { saved ->
-					userProfileEventPublisher.publishUserProfileUpdated(toUserProfileUpdatedEvent(saved))
-						.thenReturn(saved)
-				}.map { saved ->
-				logger.warn(
-					"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={} public_code={}",
-					saved.id,
-					saved.username,
-					user.role,
-					saved.role,
-					saved.publicCode,
-				)
-				UpdateUserRoleResponse(
-					id = requireNotNull(saved.id),
-					username = saved.username,
-					role = saved.role,
-					userTrack = saved.userTrack,
-					cohort = saved.cohort,
-					cohortOrder = saved.cohortOrder,
-					publicCode = saved.publicCode,
-				)
-			}
+						cohort = user.cohort,
+						cohortOrder = resolvedCohortOrder,
+					)
+					userRepository.save(
+						user.copy(
+							role = role,
+							userTrack = resolvedTrack,
+							cohortOrder = resolvedCohortOrder,
+							publicCode = recalculatedPublicCode,
+						),
+					).flatMap { saved ->
+						userProfileEventPublisher.publishUserProfileUpdated(toUserProfileUpdatedEvent(saved))
+							.thenReturn(saved)
+					}.map { saved ->
+						logger.warn(
+							"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={} public_code={}",
+							saved.id,
+							saved.username,
+							user.role,
+							saved.role,
+							saved.publicCode,
+						)
+						UpdateUserRoleResponse(
+							id = requireNotNull(saved.id),
+							username = saved.username,
+							role = saved.role,
+							userTrack = saved.userTrack,
+							cohort = saved.cohort,
+							cohortOrder = saved.cohortOrder,
+							publicCode = saved.publicCode,
+						)
+					}
+				}
 			}
 	}
 
@@ -190,11 +197,11 @@ class AdminServiceImpl(
 			.flatMap { user ->
 				val resolvedRole = request.role ?: user.role
 				val resolvedCohort = request.cohort ?: user.cohort
-				val cohortOrderMono = if (resolvedCohort == user.cohort) {
-					Mono.just(user.cohortOrder)
-				} else {
-					usernameSequenceService.nextCohortOrderSequence(resolvedCohort).map { it.toInt() }
-				}
+				val cohortOrderMono = resolveCohortOrderForUpdate(
+					originalCohort = user.cohort,
+					originalCohortOrder = user.cohortOrder,
+					resolvedCohort = resolvedCohort,
+				)
 
 				cohortOrderMono.flatMap { resolvedCohortOrder ->
 					val resolvedTrack = userPublicCodeService.resolveTrack(
@@ -283,51 +290,57 @@ class AdminServiceImpl(
 
 			Flux.fromIterable(recipientEmails)
 				.concatMap { recipientEmail ->
-					usernameSequenceService.nextSequence()
-						.flatMap { sequence ->
-							val username = "user_${sequence.toString().padStart(2, '0')}"
-							createInviteProvisionedUser(
-								username = username,
-								role = request.role,
-								userTrack = provisioningProfile.userTrack,
-								cohort = provisioningProfile.cohort,
-								cohortOrder = provisioningProfile.cohortOrder,
-								publicCode = username,
-							).flatMap { created ->
-								val inviteLink = created.inviteLink
-									?: return@flatMap Mono.error(
-										AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to issue invite link."),
-									)
-								val expiresAt = created.expiresAt
-									?: return@flatMap Mono.error(
-										AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to issue invite expiration."),
-									)
-								inviteMailService
-									.sendInviteMail(
-										toEmail = recipientEmail,
+					Mono.zip(
+						nextValidUserSequence(),
+						resolveInviteCohortOrder(
+							cohort = provisioningProfile.cohort,
+							requestedCohortOrder = provisioningProfile.cohortOrder,
+						),
+					).flatMap { tuple ->
+						val username = "user_${tuple.t1.toString().padStart(2, '0')}"
+						val cohortOrder = tuple.t2
+						createInviteProvisionedUser(
+							username = username,
+							role = request.role,
+							userTrack = provisioningProfile.userTrack,
+							cohort = provisioningProfile.cohort,
+							cohortOrder = cohortOrder,
+							publicCode = username,
+						).flatMap { created ->
+							val inviteLink = created.inviteLink
+								?: return@flatMap Mono.error(
+									AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to issue invite link."),
+								)
+							val expiresAt = created.expiresAt
+								?: return@flatMap Mono.error(
+									AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to issue invite expiration."),
+								)
+							inviteMailService
+								.sendInviteMail(
+									toEmail = recipientEmail,
+									username = created.username,
+									role = created.role,
+									inviteUrl = inviteLink,
+									expiresAt = expiresAt,
+									userTrack = created.userTrack.name,
+									cohort = created.cohort,
+									cohortOrder = created.cohortOrder,
+									publicCode = created.publicCode,
+								)
+								.thenReturn(
+									InviteMailTarget(
+										email = recipientEmail,
 										username = created.username,
 										role = created.role,
-										inviteUrl = inviteLink,
-										expiresAt = expiresAt,
+										inviteExpiresAt = expiresAt,
 										userTrack = created.userTrack.name,
 										cohort = created.cohort,
 										cohortOrder = created.cohortOrder,
 										publicCode = created.publicCode,
-									)
-									.thenReturn(
-										InviteMailTarget(
-											email = recipientEmail,
-											username = created.username,
-											role = created.role,
-											inviteExpiresAt = expiresAt,
-											userTrack = created.userTrack.name,
-											cohort = created.cohort,
-											cohortOrder = created.cohortOrder,
-											publicCode = created.publicCode,
-										),
-									)
-							}
+									),
+								)
 						}
+					}
 				}
 				.collectList()
 				.map { invites ->
@@ -478,10 +491,17 @@ class AdminServiceImpl(
 			throw AppException(ErrorCode.INVALID_REQUEST, "cohort must be greater than or equal to 0.")
 		}
 
-		val cohortOrder = rawCohortOrder ?: 0
-		if (cohortOrder < 0) {
+		if (rawCohortOrder != null && rawCohortOrder < 0) {
 			throw AppException(ErrorCode.INVALID_REQUEST, "cohortOrder must be greater than or equal to 0.")
 		}
+		if (rawCohortOrder != null && rawCohortOrder > MAX_COHORT_ORDER) {
+			throw AppException(
+				ErrorCode.INVALID_REQUEST,
+				"cohortOrder must be less than or equal to $MAX_COHORT_ORDER.",
+			)
+		}
+		// 0 (or null) is treated as "auto-allocate next cohort order".
+		val cohortOrder = rawCohortOrder?.takeIf { it >= MIN_COHORT_ORDER }
 
 		return InviteProvisioningProfile(
 			userTrack = userTrack,
@@ -493,8 +513,51 @@ class AdminServiceImpl(
 	private data class InviteProvisioningProfile(
 		val userTrack: UserTrack,
 		val cohort: Int,
-		val cohortOrder: Int,
+		val cohortOrder: Int?,
 	)
+
+	private fun resolveInviteCohortOrder(cohort: Int, requestedCohortOrder: Int?): Mono<Int> =
+		requestedCohortOrder?.let { Mono.just(it) } ?: allocateCohortOrder(cohort)
+
+	private fun resolveCohortOrderForUpdate(
+		originalCohort: Int,
+		originalCohortOrder: Int,
+		resolvedCohort: Int,
+	): Mono<Int> =
+		if (resolvedCohort != originalCohort || originalCohortOrder !in MIN_COHORT_ORDER..MAX_COHORT_ORDER) {
+			allocateCohortOrder(resolvedCohort)
+		} else {
+			Mono.just(originalCohortOrder)
+		}
+
+	private fun allocateCohortOrder(cohort: Int): Mono<Int> =
+		nextPositiveSequence(fetch = { usernameSequenceService.nextCohortOrderSequence(cohort) })
+			.flatMap { sequence ->
+				if (sequence > MAX_COHORT_ORDER.toLong()) {
+					Mono.error(
+						AppException(
+							ErrorCode.INTERNAL_SERVER_ERROR,
+							"Cohort order capacity exceeded for cohort $cohort.",
+						),
+					)
+				} else {
+					Mono.just(sequence.toInt())
+				}
+			}
+
+	private fun nextValidUserSequence(): Mono<Long> =
+		nextPositiveSequence(fetch = { usernameSequenceService.nextSequence() })
+
+	private fun nextPositiveSequence(fetch: () -> Mono<Long>, attempt: Int = 0): Mono<Long> =
+		fetch().flatMap { sequence ->
+			if (sequence >= MIN_SEQUENCE_VALUE) {
+				Mono.just(sequence)
+			} else if (attempt + 1 >= SEQUENCE_RETRY_LIMIT) {
+				Mono.error(AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to allocate a valid sequence."))
+			} else {
+				nextPositiveSequence(fetch, attempt + 1)
+			}
+		}
 
 	private fun toAdminUserSummary(user: UserEntity, now: java.time.Instant): Mono<AdminUserSummary> {
 		val baseSummary = AdminUserSummary(
@@ -553,5 +616,9 @@ class AdminServiceImpl(
 		private val ALLOWED_USER_TRACKS = setOf("NO", "FL", "SP")
 		private val NICKNAME_PATTERN = Regex("^[\\p{L}\\p{N} _.-]{1,40}$")
 		private const val USER_PROFILE_UPDATED_EVENT_TYPE = "UserProfileUpdated"
+		private const val MIN_COHORT_ORDER = 1
+		private const val MAX_COHORT_ORDER = 99
+		private const val MIN_SEQUENCE_VALUE = 1L
+		private const val SEQUENCE_RETRY_LIMIT = 10
 	}
 }

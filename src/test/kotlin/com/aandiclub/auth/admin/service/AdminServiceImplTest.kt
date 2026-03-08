@@ -68,7 +68,7 @@ class AdminServiceImplTest : FunSpec({
 	)
 	every { userProfileEventPublisher.publishUserProfileUpdated(any()) } returns Mono.empty()
 
-	test("createUser PASSWORD should generate temporary password and public code") {
+		test("createUser PASSWORD should generate temporary password and public code") {
 		val savedUser = UserEntity(
 			id = UUID.randomUUID(),
 			username = "user_01",
@@ -111,10 +111,41 @@ class AdminServiceImplTest : FunSpec({
 		savedEntitySlot.captured.userTrack shouldBe UserTrack.NO
 		savedEntitySlot.captured.cohort shouldBe 4
 		savedEntitySlot.captured.cohortOrder shouldBe 1
-		savedEntitySlot.captured.publicCode shouldBe "#NO401"
-	}
+			savedEntitySlot.captured.publicCode shouldBe "#NO401"
+		}
 
-	test("createUser INVITE should return one-time invite link and inactive account") {
+		test("createUser should retry invalid non-positive sequences") {
+			val savedUser = UserEntity(
+				id = UUID.randomUUID(),
+				username = "user_01",
+				passwordHash = "hashed-password",
+				role = UserRole.USER,
+				userTrack = UserTrack.NO,
+				cohort = 4,
+				cohortOrder = 1,
+				publicCode = "#NO401",
+				forcePasswordChange = true,
+			)
+
+			every { usernameSequenceService.nextSequence() } returnsMany listOf(Mono.just(0), Mono.just(1))
+			every { usernameSequenceService.nextCohortOrderSequence(4) } returnsMany listOf(Mono.just(0), Mono.just(1))
+			every { credentialGenerator.randomPassword(32) } returns "A".repeat(32)
+			every { passwordService.hash("A".repeat(32)) } returns "hashed-password"
+			every { userRepository.save(any()) } returns Mono.just(savedUser)
+
+			StepVerifier.create(
+				service.createUser(
+					CreateAdminUserRequest(cohort = 4, role = UserRole.USER, provisionType = ProvisionType.PASSWORD),
+				),
+			)
+				.assertNext { response ->
+					response.username shouldBe "user_01"
+					response.cohortOrder shouldBe 1
+				}
+				.verifyComplete()
+		}
+
+		test("createUser INVITE should return one-time invite link and inactive account") {
 		val userId = UUID.randomUUID()
 		val savedUser = UserEntity(
 			id = userId,
@@ -259,7 +290,7 @@ class AdminServiceImplTest : FunSpec({
 				.verifyComplete()
 	}
 
-	test("sendInviteMail should create invite user and send invite email") {
+		test("sendInviteMail should create invite user and send invite email") {
 		val userId = UUID.randomUUID()
 		val savedUser = UserEntity(
 			id = userId,
@@ -272,8 +303,9 @@ class AdminServiceImplTest : FunSpec({
 		val inviteSlot = slot<UserInviteEntity>()
 		val savedUserSlot = slot<UserEntity>()
 
-		every { usernameSequenceService.nextSequence() } returns Mono.just(3)
-		every { credentialGenerator.randomToken(any()) } returns "invite-mail-token"
+			every { usernameSequenceService.nextSequence() } returns Mono.just(3)
+			every { usernameSequenceService.nextCohortOrderSequence(0) } returns Mono.just(1)
+			every { credentialGenerator.randomToken(any()) } returns "invite-mail-token"
 		every { tokenHashService.sha256Hex("invite-mail-token") } returns "invite-mail-hash"
 		every { credentialGenerator.randomPassword(32) } returns "D".repeat(32)
 		every { passwordService.hash("D".repeat(32)) } returns "placeholder-hash"
@@ -304,12 +336,12 @@ class AdminServiceImplTest : FunSpec({
 			}
 			.verifyComplete()
 
-		inviteSlot.captured.userId shouldBe userId
-		savedUserSlot.captured.userTrack shouldBe UserTrack.NO
-		savedUserSlot.captured.cohort shouldBe 0
-		savedUserSlot.captured.cohortOrder shouldBe 0
-		savedUserSlot.captured.publicCode shouldBe "user_03"
-	}
+			inviteSlot.captured.userId shouldBe userId
+			savedUserSlot.captured.userTrack shouldBe UserTrack.NO
+			savedUserSlot.captured.cohort shouldBe 0
+			savedUserSlot.captured.cohortOrder shouldBe 1
+			savedUserSlot.captured.publicCode shouldBe "user_03"
+		}
 
 	test("sendInviteMail should send to multiple emails and keep backward-compatible single fields null") {
 		val savedUser1 = UserEntity(
@@ -328,13 +360,18 @@ class AdminServiceImplTest : FunSpec({
 			forcePasswordChange = true,
 			isActive = false,
 		)
-		var sequence = 3L
+			var sequence = 3L
+			var cohortSequence = 0L
 
-		every { usernameSequenceService.nextSequence() } answers {
-			sequence += 1L
-			Mono.just(sequence)
-		}
-		every { credentialGenerator.randomToken(any()) } returnsMany listOf("invite-token-1", "invite-token-2")
+			every { usernameSequenceService.nextSequence() } answers {
+				sequence += 1L
+				Mono.just(sequence)
+			}
+			every { usernameSequenceService.nextCohortOrderSequence(0) } answers {
+				cohortSequence += 1L
+				Mono.just(cohortSequence)
+			}
+			every { credentialGenerator.randomToken(any()) } returnsMany listOf("invite-token-1", "invite-token-2")
 		every { tokenHashService.sha256Hex("invite-token-1") } returns "invite-hash-1"
 		every { tokenHashService.sha256Hex("invite-token-2") } returns "invite-hash-2"
 		every { credentialGenerator.randomPassword(32) } returns "E".repeat(32)
@@ -414,7 +451,7 @@ class AdminServiceImplTest : FunSpec({
 		savedUserSlot.captured.userTrack shouldBe UserTrack.FL
 	}
 
-	test("sendInviteMail should reject unsupported userTrack") {
+		test("sendInviteMail should reject unsupported userTrack") {
 		StepVerifier.create(
 			service.sendInviteMail(
 				InviteMailRequest(
@@ -427,10 +464,26 @@ class AdminServiceImplTest : FunSpec({
 			.expectErrorSatisfies { ex ->
 				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
 			}
-			.verify()
-	}
+				.verify()
+		}
 
-	test("sendInviteMail should reject request when no recipient emails are provided") {
+		test("sendInviteMail should reject cohortOrder greater than supported range") {
+			StepVerifier.create(
+				service.sendInviteMail(
+					InviteMailRequest(
+						email = "new_member@aandi.club",
+						role = UserRole.USER,
+						cohortOrder = 100,
+					),
+				),
+			)
+				.expectErrorSatisfies { ex ->
+					(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
+				}
+				.verify()
+		}
+
+		test("sendInviteMail should reject request when no recipient emails are provided") {
 		StepVerifier.create(service.sendInviteMail(InviteMailRequest(role = UserRole.USER)))
 			.expectErrorSatisfies { ex ->
 				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
@@ -464,46 +517,78 @@ class AdminServiceImplTest : FunSpec({
 			.verifyComplete()
 	}
 
-	test("updateUserRole should update target user's role and public code") {
-		val actorId = UUID.randomUUID()
-		val targetId = UUID.randomUUID()
-		val originalUser = UserEntity(
-			id = targetId,
-			username = "member_01",
-			passwordHash = "h1",
-			role = UserRole.USER,
-			userTrack = UserTrack.SP,
-			cohort = 4,
-			cohortOrder = 1,
-			publicCode = "#SP401",
-		)
-		val savedSlot = slot<UserEntity>()
-		val eventSlot = slot<UserProfileUpdatedEvent>()
+		test("updateUserRole should update target user's role and public code") {
+			val actorId = UUID.randomUUID()
+			val targetId = UUID.randomUUID()
+			val originalUser = UserEntity(
+				id = targetId,
+				username = "member_01",
+				passwordHash = "h1",
+				role = UserRole.USER,
+				userTrack = UserTrack.SP,
+				cohort = 4,
+				cohortOrder = 1,
+				publicCode = "#SP401",
+			)
+			val savedSlot = slot<UserEntity>()
+			val eventSlot = slot<UserProfileUpdatedEvent>()
 
-		every { userRepository.findById(targetId) } returns Mono.just(originalUser)
-		every { userRepository.save(capture(savedSlot)) } returns Mono.just(
-			originalUser.copy(role = UserRole.ORGANIZER, userTrack = UserTrack.NO, publicCode = "#OR401"),
-		)
-		every { userProfileEventPublisher.publishUserProfileUpdated(capture(eventSlot)) } returns Mono.empty()
+			every { userRepository.findById(targetId) } returns Mono.just(originalUser)
+			every { userRepository.save(capture(savedSlot)) } returns Mono.just(
+				originalUser.copy(role = UserRole.ORGANIZER, userTrack = UserTrack.NO, publicCode = "#OR401"),
+			)
+			every { userProfileEventPublisher.publishUserProfileUpdated(capture(eventSlot)) } returns Mono.empty()
 
-		StepVerifier.create(service.updateUserRole(targetId, UserRole.ORGANIZER, actorId))
-			.assertNext { response ->
-				response.id shouldBe targetId
-				response.username shouldBe "member_01"
-				response.role shouldBe UserRole.ORGANIZER
-				response.publicCode shouldBe "#OR401"
-			}
-			.verifyComplete()
+			StepVerifier.create(service.updateUserRole(targetId, UserRole.ORGANIZER, actorId))
+				.assertNext { response ->
+					response.id shouldBe targetId
+					response.username shouldBe "member_01"
+					response.role shouldBe UserRole.ORGANIZER
+					response.publicCode shouldBe "#OR401"
+				}
+				.verifyComplete()
 
-		savedSlot.captured.role shouldBe UserRole.ORGANIZER
-		savedSlot.captured.userTrack shouldBe UserTrack.NO
-		savedSlot.captured.publicCode shouldBe "#OR401"
-		eventSlot.captured.userId shouldBe targetId.toString()
-		eventSlot.captured.role shouldBe UserRole.ORGANIZER.name
-		eventSlot.captured.publicCode shouldBe "#OR401"
-	}
+			savedSlot.captured.role shouldBe UserRole.ORGANIZER
+			savedSlot.captured.userTrack shouldBe UserTrack.NO
+			savedSlot.captured.publicCode shouldBe "#OR401"
+			eventSlot.captured.userId shouldBe targetId.toString()
+			eventSlot.captured.role shouldBe UserRole.ORGANIZER.name
+			eventSlot.captured.publicCode shouldBe "#OR401"
+		}
 
-	test("updateUser should apply USER track and regenerate public code") {
+		test("updateUserRole should repair invalid cohortOrder and then update role") {
+			val actorId = UUID.randomUUID()
+			val targetId = UUID.randomUUID()
+			val originalUser = UserEntity(
+				id = targetId,
+				username = "member_invalid_order",
+				passwordHash = "h1",
+				role = UserRole.USER,
+				userTrack = UserTrack.NO,
+				cohort = 0,
+				cohortOrder = 0,
+				publicCode = "#NO000",
+			)
+			val savedSlot = slot<UserEntity>()
+
+			every { userRepository.findById(targetId) } returns Mono.just(originalUser)
+			every { usernameSequenceService.nextCohortOrderSequence(0) } returns Mono.just(1)
+			every { userRepository.save(capture(savedSlot)) } answers { Mono.just(firstArg()) }
+			every { userProfileEventPublisher.publishUserProfileUpdated(any()) } returns Mono.empty()
+
+			StepVerifier.create(service.updateUserRole(targetId, UserRole.ORGANIZER, actorId))
+				.assertNext { response ->
+					response.role shouldBe UserRole.ORGANIZER
+					response.cohortOrder shouldBe 1
+					response.publicCode shouldBe "#OR001"
+				}
+				.verifyComplete()
+
+			savedSlot.captured.cohortOrder shouldBe 1
+			savedSlot.captured.publicCode shouldBe "#OR001"
+		}
+
+		test("updateUser should apply USER track and regenerate public code") {
 		val actorId = UUID.randomUUID()
 		val targetId = UUID.randomUUID()
 		val originalUser = UserEntity(
@@ -533,10 +618,46 @@ class AdminServiceImplTest : FunSpec({
 				response.userTrack shouldBe UserTrack.FL
 				response.publicCode shouldBe "#FL403"
 			}
-			.verifyComplete()
-	}
+				.verifyComplete()
+		}
 
-	test("updateUser should update role and recalculate track/public code") {
+		test("updateUser should repair invalid cohortOrder before updating track") {
+			val actorId = UUID.randomUUID()
+			val targetId = UUID.randomUUID()
+			val originalUser = UserEntity(
+				id = targetId,
+				username = "member_invalid_update",
+				passwordHash = "h1",
+				role = UserRole.USER,
+				userTrack = UserTrack.NO,
+				cohort = 4,
+				cohortOrder = 0,
+				publicCode = "#NO400",
+			)
+			val savedSlot = slot<UserEntity>()
+
+			every { userRepository.findById(targetId) } returns Mono.just(originalUser)
+			every { usernameSequenceService.nextCohortOrderSequence(4) } returns Mono.just(1)
+			every { userRepository.save(capture(savedSlot)) } answers { Mono.just(firstArg()) }
+			every { userProfileEventPublisher.publishUserProfileUpdated(any()) } returns Mono.empty()
+
+			StepVerifier.create(
+				service.updateUser(
+					request = UpdateUserRequest(userId = targetId, userTrack = UserTrack.FL),
+					actorUserId = actorId,
+				),
+			)
+				.assertNext { response ->
+					response.cohortOrder shouldBe 1
+					response.publicCode shouldBe "#FL401"
+				}
+				.verifyComplete()
+
+			savedSlot.captured.cohortOrder shouldBe 1
+			savedSlot.captured.publicCode shouldBe "#FL401"
+		}
+
+		test("updateUser should update role and recalculate track/public code") {
 		val actorId = UUID.randomUUID()
 		val targetId = UUID.randomUUID()
 		val originalUser = UserEntity(
