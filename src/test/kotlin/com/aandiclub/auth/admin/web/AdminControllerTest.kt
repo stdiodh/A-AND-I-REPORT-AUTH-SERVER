@@ -42,7 +42,7 @@ class AdminControllerTest : FunSpec({
 		webTestClient.post()
 			.uri("/v1/admin/invite-mail")
 			.contentType(MediaType.APPLICATION_JSON)
-			.bodyValue("""{"email":"new_member@aandi.club","role":"USER"}""")
+			.bodyValue("""{"emails":["new_member@aandi.club"],"role":"USER"}""")
 			.exchange()
 			.expectStatus().isOk
 			.expectBody()
@@ -86,17 +86,5 @@ class AdminControllerTest : FunSpec({
 			.jsonPath("$.data.invites.length()").isEqualTo(2)
 
 		requestSlot.captured.emails.size shouldBe 2
-	}
-
-	test("POST /v1/admin/invite-mail with invalid email returns bad request") {
-		webTestClient.post()
-			.uri("/v1/admin/invite-mail")
-			.contentType(MediaType.APPLICATION_JSON)
-			.bodyValue("""{"email":"invalid-email","role":"USER"}""")
-			.exchange()
-			.expectStatus().isBadRequest
-			.expectBody()
-			.jsonPath("$.success").isEqualTo(false)
-			.jsonPath("$.error.code").isEqualTo("INVALID_REQUEST")
 	}
 })

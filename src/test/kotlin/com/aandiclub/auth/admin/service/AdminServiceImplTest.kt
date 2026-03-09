@@ -264,7 +264,7 @@ class AdminServiceImplTest : FunSpec({
 				)
 			} returns Mono.empty()
 
-		StepVerifier.create(service.sendInviteMail(InviteMailRequest(email = "new_member@aandi.club", role = UserRole.USER)))
+		StepVerifier.create(service.sendInviteMail(InviteMailRequest(emails = listOf("new_member@aandi.club"), role = UserRole.USER)))
 			.assertNext { response ->
 				response.sentCount shouldBe 1
 				response.username shouldBe "user_03"
@@ -362,7 +362,7 @@ class AdminServiceImplTest : FunSpec({
 		StepVerifier.create(
 			service.sendInviteMail(
 				InviteMailRequest(
-					email = "new_member@aandi.club",
+					emails = listOf("new_member@aandi.club"),
 					role = UserRole.USER,
 					cohort = 10,
 					cohortOrder = 3,
@@ -388,7 +388,7 @@ class AdminServiceImplTest : FunSpec({
 		StepVerifier.create(
 			service.sendInviteMail(
 				InviteMailRequest(
-					email = "new_member@aandi.club",
+					emails = listOf("new_member@aandi.club"),
 					role = UserRole.USER,
 					userTrack = "XX",
 				),
@@ -401,7 +401,7 @@ class AdminServiceImplTest : FunSpec({
 	}
 
 	test("sendInviteMail should reject request when no recipient emails are provided") {
-		StepVerifier.create(service.sendInviteMail(InviteMailRequest(role = UserRole.USER)))
+		StepVerifier.create(service.sendInviteMail(InviteMailRequest(emails = emptyList(), role = UserRole.USER)))
 			.expectErrorSatisfies { ex ->
 				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
 			}
