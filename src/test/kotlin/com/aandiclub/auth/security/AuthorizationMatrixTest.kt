@@ -261,7 +261,7 @@ class AuthorizationMatrixTest : StringSpec() {
 				.uri("/v1/admin/invite-mail")
 				.headers { it.setBearerAuth(token) }
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue("""{"email":"new_member@aandi.club","role":"USER"}""")
+				.bodyValue("""{"emails":["new_member@aandi.club"],"role":"USER"}""")
 				.exchange()
 				.expectStatus().isForbidden
 		}

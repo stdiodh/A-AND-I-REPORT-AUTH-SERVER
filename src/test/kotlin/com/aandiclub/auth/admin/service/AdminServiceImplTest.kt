@@ -401,6 +401,63 @@ class AdminServiceImplTest : FunSpec({
 			.verifyComplete()
 	}
 
+	test("sendInviteMail should normalize duplicate emails and send once per recipient") {
+		io.mockk.clearMocks(userRepository, userInviteRepository, inviteTokenCacheService, usernameSequenceService, credentialGenerator, passwordService, tokenHashService, inviteMailService, answers = false)
+
+		val savedUser = UserEntity(
+			id = UUID.randomUUID(),
+			username = "user_06",
+			passwordHash = "placeholder-hash",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+
+		every { usernameSequenceService.nextSequence() } returns Mono.just(6)
+		every { credentialGenerator.randomToken(any()) } returns "invite-token-6"
+		every { tokenHashService.sha256Hex("invite-token-6") } returns "invite-hash-6"
+		every { credentialGenerator.randomPassword(32) } returns "F".repeat(32)
+		every { passwordService.hash("F".repeat(32)) } returns "placeholder-hash"
+		every { userRepository.save(any()) } returns Mono.just(savedUser)
+		every { userInviteRepository.save(any()) } answers { Mono.just(firstArg()) }
+		every { inviteTokenCacheService.cacheToken(any(), any(), any()) } returns Mono.just(true)
+		every { inviteMailService.sendInviteMail(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns Mono.empty()
+
+		StepVerifier.create(
+			service.sendInviteMail(
+				InviteMailRequest(
+					emails = listOf(
+						"new_member@aandi.club",
+						" NEW_MEMBER@aandi.club ",
+						"new_member@aandi.club",
+					),
+					role = UserRole.USER,
+				),
+			),
+		)
+			.assertNext { response ->
+				response.sentCount shouldBe 1
+				response.invites.size shouldBe 1
+				response.invites[0].email shouldBe "new_member@aandi.club"
+			}
+			.verifyComplete()
+
+		verify(exactly = 1) { userRepository.save(any()) }
+		verify(exactly = 1) {
+			inviteMailService.sendInviteMail(
+				toEmail = "new_member@aandi.club",
+				username = any(),
+				role = UserRole.USER,
+				inviteUrl = any(),
+				expiresAt = any(),
+				userTrack = any(),
+				cohort = any(),
+				cohortOrder = any(),
+				publicCode = any(),
+			)
+		}
+	}
+
 	test("sendInviteMail should persist and return cohort and track when provided") {
 		val savedUser = UserEntity(
 			id = UUID.randomUUID(),
